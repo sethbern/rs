@@ -1220,9 +1220,9 @@ async def do_download_assignment(
         csv_buffer,
         media_type="text/csv",
     )
-    response.headers[
-        "Content-Disposition"
-    ] = f"attachment; filename=assignment_{assignment_id}.csv"
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=assignment_{assignment_id}.csv"
+    )
 
     return response
 
@@ -1572,6 +1572,7 @@ async def duplicate_assignment_endpoint(
             detail=f"Error duplicating assignment: {str(e)}",
         )
 
+
 class CreateDatafilePayload(BaseModel):
     filename: str
     main_code: str
@@ -1595,14 +1596,20 @@ async def get_datafiles(
         datafiles_list = []
         for df in datafiles:
             if df is not None:
-                datafiles_list.append({
-                    "id": df.id,
-                    "acid": df.acid,
-                    "filename": df.filename,
-                    "course_id": df.course_id,
-                    "owner": df.owner,
-                    "main_code": df.main_code[:100] + "..." if df.main_code and len(df.main_code) > 100 else df.main_code,  # Truncate for list view
-                })
+                datafiles_list.append(
+                    {
+                        "id": df.id,
+                        "acid": df.acid,
+                        "filename": df.filename,
+                        "course_id": df.course_id,
+                        "owner": df.owner,
+                        "main_code": (
+                            df.main_code[:100] + "..."
+                            if df.main_code and len(df.main_code) > 100
+                            else df.main_code
+                        ),  # Truncate for list view
+                    }
+                )
 
         return make_json_response(
             status=status.HTTP_200_OK,
@@ -1614,8 +1621,6 @@ async def get_datafiles(
             status=status.HTTP_400_BAD_REQUEST,
             detail=f"Error fetching datafiles: {str(e)}",
         )
-
-
 
 
 @router.post("/datafile")
@@ -1864,5 +1869,3 @@ async def get_datafile_endpoint(
             status=status.HTTP_400_BAD_REQUEST,
             detail=f"Error fetching datafile: {str(e)}",
         )
-
-

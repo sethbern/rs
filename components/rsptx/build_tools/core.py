@@ -679,7 +679,10 @@ def _process_single_chapter(sess, db_context, chapter, chap_num, course_name):
     res = sess.execute(ins)
     return res.inserted_primary_key[0]
 
+
 import pdb
+
+
 def _process_subchapters(sess, db_context, chapter, chapid, course_name):
     """Process all subchapters for a given chapter."""
     subchap = 0
@@ -695,8 +698,10 @@ def _process_subchapters(sess, db_context, chapter, chapid, course_name):
         # at this point (7/28/2025) the only reason for a subsubchapter
         # is to have a timed assignment, so we can skip the rest of the
         # find all divs with a class of timedAssessment
-        #pdb.set_trace()
-        for timed_assessment_div in subchapter.findall(".//div[@class='timedAssessment']"):
+        # pdb.set_trace()
+        for timed_assessment_div in subchapter.findall(
+            ".//div[@class='timedAssessment']"
+        ):
             _process_single_timed_assignment(
                 sess,
                 db_context,
@@ -1010,7 +1015,9 @@ def _process_single_question(
     if qtype == "doenet":
         # rewrite the url in the dbtext to use the course name in the path
         dbtext = re.sub(
-            r'(<iframe.*?)src="(.*?.html)"', rf'\1 src="/ns/books/published/{course_name}/\2"', dbtext
+            r'(<iframe.*?)src="(.*?.html)"',
+            rf'\1 src="/ns/books/published/{course_name}/\2"',
+            dbtext,
         )
     optional = "T" if ("optional" in question.attrib or qtype == "datafile") else "F"
     practice = _determine_practice_flag(qtype, el)
