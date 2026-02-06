@@ -215,7 +215,7 @@ def generate_partial_Parsons(
         line_indentation = fixed_line_code[
             : len(fixed_line_code) - len(fixed_line_code.lstrip())
         ]
-        if type(distractor_tuple_dict[fixed_line_key]) == tuple:
+        if isinstance(distractor_tuple_dict[fixed_line_key], tuple):
             distractor_tuple_dict[fixed_line_key] = (
                 fixed_line_key[0] + 0.5,
                 fixed_line_key[0],
@@ -223,7 +223,7 @@ def generate_partial_Parsons(
                 + distractor_tuple_dict[fixed_line_key][2].strip()
                 + " #paired",
             )
-        elif type(distractor_tuple_dict[fixed_line_key]) == str:
+        elif isinstance(distractor_tuple_dict[fixed_line_key], str):
             distractor_tuple_dict[fixed_line_key] = (
                 fixed_line_key[0] + 0.5,
                 fixed_line_key[0],
@@ -260,7 +260,7 @@ def keep_last_hash_tag_lines(input_string, hash_tag):
         if (hash_tag in line) & (not found_last_settled):
             output_lines.append(line)
             found_last_settled = True
-        elif (hash_tag in line) & (found_last_settled == True):
+        elif (hash_tag in line) & (found_last_settled):
             line = line.replace(hash_tag, "")
             output_lines.append(line)
         else:

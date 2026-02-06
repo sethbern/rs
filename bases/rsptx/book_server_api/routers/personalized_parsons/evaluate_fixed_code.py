@@ -357,7 +357,7 @@ def code_distractor_unittest_evaluation(
                 return results.wasSuccessful(), code_with_distrator
             else:
                 return "No starting code", code_with_distrator
-        except:
+        except Exception:
             try:
                 code_with_distrator = fix_indentation(code_with_distrator)
                 results = load_and_run_tests(unittest_case, code_with_distrator)
@@ -383,7 +383,7 @@ def clean_student_code(student_code, default_test_code):
         cleaned_student_code = remove_default_testline(student_code, default_test_code)
         cleaned_student_code = remove_empty_lines(cleaned_student_code)
         cleaned_student_code = remove_python_comments(cleaned_student_code)
-    except:
+    except Exception:
         cleaned_student_code = student_code
 
     return cleaned_student_code
