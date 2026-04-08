@@ -41,7 +41,7 @@ const AsyncModeHeader = ({ hasApiKey }: { hasApiKey: boolean }) => {
     const exercises = assignmentExercises.map((ex) => ({
       ...ex,
       question_json: JSON.stringify(ex.question_json),
-      async_mode: value === "LLM" ? "llm" : "standard"
+      async_mode: value === "LLM" ? "llm" : value === "Analogies" ? "analogies" : "standard"
     }));
     const { error } = await updateExercises(exercises);
     if (!error) {
@@ -75,7 +75,8 @@ const AsyncModeHeader = ({ hasApiKey }: { hasApiKey: boolean }) => {
               onChange={(e) => setValue(e.value)}
               options={[
                 { label: "Standard", value: "Standard" },
-                { label: "LLM", value: "LLM", disabled: !hasApiKey }
+                { label: "LLM", value: "LLM", disabled: !hasApiKey },
+                { label: "Analogies", value: "Analogies", disabled: !hasApiKey }
               ]}
               optionLabel="label"
               optionDisabled="disabled"
@@ -364,11 +365,12 @@ export const AssignmentExercisesTable = ({
               <div className="editable-table-cell" style={{ position: "relative" }}>
                 <Dropdown
                   className="editable-table-dropdown"
-                  value={data.async_mode && data.async_mode !== "standard" && hasApiKey ? "LLM" : "Standard"}
-                  onChange={(e) => updateAssignmentQuestions([{ ...data, question_json: JSON.stringify(data.question_json), async_mode: e.value === "LLM" ? "llm" : "standard" }])}
+                  value={!hasApiKey || !data.async_mode || data.async_mode === "standard" ? "Standard" : data.async_mode === "analogies" ? "Analogies" : "LLM"}
+                  onChange={(e) => updateAssignmentQuestions([{ ...data, question_json: JSON.stringify(data.question_json), async_mode: e.value === "LLM" ? "llm" : e.value === "Analogies" ? "analogies" : "standard" }])}
                   options={[
                     { label: "Standard", value: "Standard" },
-                    { label: "LLM", value: "LLM", disabled: !hasApiKey }
+                    { label: "LLM", value: "LLM", disabled: !hasApiKey },
+                    { label: "Analogies", value: "Analogies", disabled: !hasApiKey }
                   ]}
                   optionLabel="label"
                   optionDisabled="disabled"
