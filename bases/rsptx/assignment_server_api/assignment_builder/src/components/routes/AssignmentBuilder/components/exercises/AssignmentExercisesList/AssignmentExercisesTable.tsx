@@ -41,7 +41,7 @@ const AsyncModeHeader = ({ hasApiKey }: { hasApiKey: boolean }) => {
     const exercises = assignmentExercises.map((ex) => ({
       ...ex,
       question_json: JSON.stringify(ex.question_json),
-      use_llm: value === "LLM"
+      async_mode: value === "LLM" ? "llm" : "standard"
     }));
     const { error } = await updateExercises(exercises);
     if (!error) {
@@ -364,8 +364,8 @@ export const AssignmentExercisesTable = ({
               <div className="editable-table-cell" style={{ position: "relative" }}>
                 <Dropdown
                   className="editable-table-dropdown"
-                  value={data.use_llm && hasApiKey ? "LLM" : "Standard"}
-                  onChange={(e) => updateAssignmentQuestions([{ ...data, question_json: JSON.stringify(data.question_json), use_llm: e.value === "LLM" }])}
+                  value={data.async_mode && data.async_mode !== "standard" && hasApiKey ? "LLM" : "Standard"}
+                  onChange={(e) => updateAssignmentQuestions([{ ...data, question_json: JSON.stringify(data.question_json), async_mode: e.value === "LLM" ? "llm" : "standard" }])}
                   options={[
                     { label: "Standard", value: "Standard" },
                     { label: "LLM", value: "LLM", disabled: !hasApiKey }

@@ -775,8 +775,8 @@ def peer_async():
         ).select().first()
     async_llm_modes_enabled = course_attrs.get("enable_async_llm_modes", "false") == "true"
     if async_llm_modes_enabled:
-        question_use_llm = bool(aq.use_llm) if aq else False
-        llm_enabled = _llm_enabled() and question_use_llm
+        question_async_mode = (aq.async_mode or "standard") if aq else "standard"
+        llm_enabled = _llm_enabled() and question_async_mode in ("llm", "analogies")
     else:
         llm_enabled = _llm_enabled()
     try:
