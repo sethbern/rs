@@ -5,6 +5,9 @@
 <script>
   window.DISABLE_LLMTEST = true;
   window.PI_LLM_MODE = {{='true' if llm_enabled else 'false'}};
+  window.PI_ASYNC_MODE = "{{=async_mode}}";
+  window.PI_THEMES = {{=XML(pi_themes_json)}};
+  window._selectedTheme = null;
   window.DISABLE_LLMTEST = true;
 
   window.eBookConfig = window.eBookConfig || {};
@@ -74,6 +77,12 @@
     {{ pass }}
     {{ if all_done == "false": }}
     <div class="col-md-6" id="reflectionPanel" style="opacity:0.5; pointer-events:none;">
+      <div id="themePicker" style="display:none; margin-bottom:10px;">
+        <label for="themeSelect"><strong>Pick an analogy theme for your discussion:</strong></label>
+        <select id="themeSelect" class="form-control" style="margin-top:4px;">
+          <option value="">-- Select a theme --</option>
+        </select>
+      </div>
       <p>
           Please provide an explanation for why you answered
           <span id="current_answer">__</span>
@@ -353,6 +362,8 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
   const chat = document.getElementById("llmChat");
   const nextStep = document.getElementById("nextStep");
   lockVote1AndReflection();
+  const themeSelectEl = document.getElementById("themeSelect");
+  if (themeSelectEl) themeSelectEl.disabled = true;
 
   discussion.style.display = "block";
   if (window.PI_LLM_MODE === true) {
@@ -411,6 +422,12 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
     studentSubmittedVote2 = false;
   }
 
+  if (window.PI_ASYNC_MODE === "analogies" && !window._selectedTheme) {
+    alert("Please select an analogy theme before submitting.");
+    document.getElementById("themeSelect").focus();
+    return;
+  }
+
   if (window.PI_LLM_MODE !== true) {
     await showStandardDiscussion(chat, nextStep, false);
     return;
@@ -435,7 +452,8 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
         body: JSON.stringify({
           div_id: currentQuestion,
           selected_answer: selected,
-          messages: window._llmMessages
+          messages: window._llmMessages,
+          theme_id: window._selectedTheme || ""
         })
       });
     } catch (e) {
@@ -553,7 +571,8 @@ function enableChat(reflection, selected) {
         body: JSON.stringify({
           div_id: currentQuestion,
           selected_answer: selected,
-          messages: window._llmMessages
+          messages: window._llmMessages,
+          theme_id: window._selectedTheme || ""
         })
       });
     } catch (e) {
@@ -739,5 +758,33 @@ function enableChat(reflection, selected) {
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll('.pi-ask-btn').forEach(btn => btn.remove());
+
+    // Populate and show the theme picker only in analogies mode
+    if (window.PI_ASYNC_MODE === "analogies" && Array.isArray(window.PI_THEMES)) {
+      const picker = document.getElementById("themePicker");
+      const sel = document.getElementById("themeSelect");
+      const submitBtn = document.getElementById("submitReflection");
+      if (picker && sel) {
+        window.PI_THEMES.forEach(function(t) {
+          const opt = document.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.label;
+          sel.appendChild(opt);
+        });
+        // Disable submit until a theme is chosen
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.title = "Select an analogy theme first";
+        }
+        sel.addEventListener("change", function() {
+          window._selectedTheme = sel.value || null;
+          if (submitBtn) {
+            submitBtn.disabled = !window._selectedTheme;
+            submitBtn.title = window._selectedTheme ? "" : "Select an analogy theme first";
+          }
+        });
+        picker.style.display = "block";
+      }
+    }
   });
 </script>

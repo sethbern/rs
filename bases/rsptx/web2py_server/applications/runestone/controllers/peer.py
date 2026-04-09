@@ -791,6 +791,8 @@ def peer_async():
     except Exception:
         logger.exception("Failed to log pi_mode for peer_async")
 
+    from pi_themes import THEMES as PI_THEMES
+
     return dict(
         course_id=auth.user.course_name,
         course=get_course_row(db.courses.ALL),
@@ -804,6 +806,8 @@ def peer_async():
         has_vote1=has_vote1,
         has_reflection=has_reflection,
         llm_enabled=llm_enabled,
+        async_mode=question_async_mode if async_llm_modes_enabled else "standard",
+        pi_themes_json=json.dumps(PI_THEMES),
         llm_reply=None,
         **course_attrs,
     )
@@ -926,6 +930,7 @@ def get_async_llm_reflection():
     div_id = (data.get("div_id") or "").strip()
     selected = (data.get("selected_answer") or "").strip()
     messages = data.get("messages")
+    theme_id = (data.get("theme_id") or "").strip()
     try:
         sid = auth.user.username
         course_name = auth.user.course_name
@@ -963,7 +968,22 @@ def get_async_llm_reflection():
 
     question, code, choices = _get_mcq_context(div_id)
 
-    sys_content = (
+    analogy_preamble = ""
+    if theme_id:
+        from pi_themes import THEME_BY_ID
+        theme = THEME_BY_ID.get(theme_id)
+        if theme:
+            analogy_preamble = (
+                f"IMPORTANT: ground every response in a concept or scenario from '{theme['label']}' that already behaves the same way as the CS concept in this question.\n"
+                f"the goal is to use something the student already knows about '{theme['label']}' to do the explanatory work — not to rename the code variables in theme words.\n"
+                f"bad: replacing x/y/z with theme items and re-describing the same logic. good: finding a concept in '{theme['label']}' that is already mutually exclusive, or already sequential, or already nested — whichever matches the CS structure — and using that existing behavior as the lens.\n"
+                f"for example if the concept is mutually exclusive branching and the theme is music: 'a track can only be in one playback state at a time — queued, playing, or skipped — it can't be two at once. the code works the same way.' that leverages what the student already knows about music states.\n"
+                f"establish this scenario in your first message. keep it short and casual. build on it across messages — never switch to a new one.\n"
+                f"never announce or label the analogy. never say 'using the {theme['label']} analogy'.\n"
+                f"never announce or label the analogy. never say 'using the {theme['label']} analogy'.\n"
+            )
+
+    sys_content = analogy_preamble + (
         "only speak in lower case.\n"
         "you are a student talking to another student during peer instruction.\n"
         "you are both looking at the same multiple choice question with code and answers.\n"
@@ -976,6 +996,10 @@ def get_async_llm_reflection():
         "do not sound like a teacher.\n"
         "do not explain step by step.\n"
         "never say something is right or wrong.\n"
+        "never use phrases like 'not quite' or 'not exactly' or 'almost' or 'close' or 'not yet' or any phrase that implies the student is incorrect.\n"
+        "never react to whether the student's answer is correct or incorrect — only ask them to explain their reasoning.\n"
+        "never use the analogy to imply the student's answer is wrong — for example do not say things like 'the tracks are not blending' or 'the conditions are not met' as a way of signaling incorrectness.\n"
+        "the analogy should only appear in questions about how the student reasoned not in statements about whether they got it right.\n"
         "do not pretend to have picked an answer yourself.\n"
         "never mention a choice letter as the correct answer.\n"
         "if the question includes code never clearly describe the final result or fully state what it prints.\n"
@@ -991,7 +1015,8 @@ def get_async_llm_reflection():
         "never say things like 'the feedback says' or 'according to the answer' or reference any grading or correctness information.\n"
         "do not make up information that is not in the question.\n"
         "if you are unsure about something say so honestly instead of guessing.\n"
-        "if the other student clearly sounds confident or repeats the same answer twice tell them to vote again or submit it.\n"
+        "if the other student mentions the same answer more than once or sounds confident in their answer you must tell them to go ahead and vote again — this overrides everything else.\n"
+        "do not ask another question or continue the analogy after they have confirmed their answer — just tell them to vote.\n"
         "do not continue reasoning after telling them to vote again.\n"
         "focus on getting them to think through the problem not on changing their mind.\n\n"
     )
