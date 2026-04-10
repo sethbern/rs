@@ -968,22 +968,38 @@ def get_async_llm_reflection():
 
     question, code, choices = _get_mcq_context(div_id)
 
+    analogy_scenario = (data.get("analogy_scenario") or "").strip()
+    generated_scenario = ""
+
+    analogy_first_message = ""
+    reflection_text = (data.get("reflection") or "").strip()
+    if theme_id and not analogy_scenario:
+        from pi_themes import THEME_BY_ID
+        theme_obj = THEME_BY_ID.get(theme_id)
+        if theme_obj:
+            generated_scenario, analogy_first_message = _generate_analogy_scenario(
+                question, code, choices, theme_obj["label"], selected, reflection_text
+            )
+            if generated_scenario:
+                analogy_scenario = generated_scenario
+
     analogy_preamble = ""
-    if theme_id:
+    if theme_id and analogy_scenario:
         from pi_themes import THEME_BY_ID
         theme = THEME_BY_ID.get(theme_id)
         if theme:
+            theme_label = theme["label"]
             analogy_preamble = (
-                f"IMPORTANT: ground every response in a concept or scenario from '{theme['label']}' that already behaves the same way as the CS concept in this question.\n"
-                f"the goal is to use something the student already knows about '{theme['label']}' to do the explanatory work — not to rename the code variables in theme words.\n"
-                f"bad: replacing x/y/z with theme items and re-describing the same logic. good: finding a concept in '{theme['label']}' that is already mutually exclusive, or already sequential, or already nested — whichever matches the CS structure — and using that existing behavior as the lens.\n"
-                f"for example if the concept is mutually exclusive branching and the theme is music: 'a track can only be in one playback state at a time — queued, playing, or skipped — it can't be two at once. the code works the same way.' that leverages what the student already knows about music states.\n"
-                f"establish this scenario in your first message. keep it short and casual. build on it across messages — never switch to a new one.\n"
-                f"never announce or label the analogy. never say 'using the {theme['label']} analogy'.\n"
-                f"never announce or label the analogy. never say 'using the {theme['label']} analogy'.\n"
+                f"the student chose '{theme_label}' as their analogy theme.\n"
+                f"use ONLY this specific scenario to ground your responses. do not invent a different one:\n"
+                f'"{analogy_scenario}"\n'
+                f"\n"
+                f"your first response: this is the student's very first message — they have never seen or heard this scenario before. introduce it to them fresh. explain the situation, what is being checked, and what the outcomes are. never say 'remember' or 'as we discussed' or 'in our X scenario' — just describe it naturally as if you are bringing it up for the first time. only after describing it should you ask them to apply the actual values from the question to it.\n"
+                f"every follow-up: keep building on this same scenario. never drop it or explain the code directly without it.\n"
+                f"never say 'in our scenario' or 'in the {theme_label} analogy' or announce you are using an analogy.\n"
             )
 
-    sys_content = analogy_preamble + (
+    base_rules = (
         "only speak in lower case.\n"
         "you are a student talking to another student during peer instruction.\n"
         "you are both looking at the same multiple choice question with code and answers.\n"
@@ -996,10 +1012,19 @@ def get_async_llm_reflection():
         "do not sound like a teacher.\n"
         "do not explain step by step.\n"
         "never say something is right or wrong.\n"
+        "never use filler validation words like 'right!' or 'correct!' or 'exactly!' or 'cool!' or 'great!' or 'perfect!' or 'got it!' — these all imply the student is correct.\n"
+        "never confirm or explain the code outcome after the student says something — only ask them to keep tracing or elaborate.\n"
+        "if an analogy scenario was established, always bring follow-up questions back through that scenario — do not abandon it for direct code talk.\n"
+        "never say things like 'let's focus on the code' or 'going back to the code' — always route through the scenario instead.\n"
+        "if the student themselves references the analogy, use that as an opening to deepen it — never redirect away from it.\n"
         "never use phrases like 'not quite' or 'not exactly' or 'almost' or 'close' or 'not yet' or any phrase that implies the student is incorrect.\n"
         "never react to whether the student's answer is correct or incorrect — only ask them to explain their reasoning.\n"
-        "never use the analogy to imply the student's answer is wrong — for example do not say things like 'the tracks are not blending' or 'the conditions are not met' as a way of signaling incorrectness.\n"
-        "the analogy should only appear in questions about how the student reasoned not in statements about whether they got it right.\n"
+        "never use the analogy to imply the student's answer is wrong.\n"
+        "never ask hypothetical questions like 'if one condition fails what happens' — those have obvious answers that signal the student is wrong.\n"
+        "instead ask the student to directly apply the analogy to the actual values: have them plug the numbers or specifics into the scenario and tell you what they get.\n"
+        "a good question: 'so with x=3 and y=5 what happens at that first checkpoint in the scenario?'\n"
+        "a bad question: 'if one checkpoint fails do you still get through?' — that tells them a checkpoint fails.\n"
+        "the student should discover whether their answer is right or wrong by tracing through the analogy themselves.\n"
         "do not pretend to have picked an answer yourself.\n"
         "never mention a choice letter as the correct answer.\n"
         "if the question includes code never clearly describe the final result or fully state what it prints.\n"
@@ -1021,19 +1046,20 @@ def get_async_llm_reflection():
         "focus on getting them to think through the problem not on changing their mind.\n\n"
     )
 
+    context_suffix = ""
     if question:
-        sys_content += f"question:\n{question}\n\n"
-
+        context_suffix += f"question:\n{question}\n\n"
     if code:
-        sys_content += f"code:\n{code}\n\n"
-
+        context_suffix += f"code:\n{code}\n\n"
     if choices:
-        sys_content += "answer choices:\n" + "\n".join(choices) + "\n\n"
-
+        context_suffix += "answer choices:\n" + "\n".join(choices) + "\n\n"
     if selected:
-        sys_content += f"the other student chose: {selected}\n\n"
+        context_suffix += f"the other student chose: {selected}\n\n"
 
-    system_msg = {"role": "system", "content": sys_content}
+    def build_system_msg(preamble):
+        return {"role": "system", "content": preamble + base_rules + context_suffix}
+
+    system_msg = build_system_msg(analogy_preamble)
 
     if not messages:
         reflection = (data.get("reflection") or "").strip()
@@ -1061,7 +1087,11 @@ def get_async_llm_reflection():
             messages[0] = system_msg
 
     try:
-        reply = _call_openai(messages)
+        # If we just generated the first message via analogy generation, use it directly
+        if analogy_first_message:
+            reply = analogy_first_message
+        else:
+            reply = _call_openai(messages)
         try:
             db.useinfo.insert(
                 course_id=auth.user.course_name,
@@ -1078,7 +1108,10 @@ def get_async_llm_reflection():
             return response.json(
                 dict(ok=False, error="llm returned empty reply (missing api key?)")
             )
-        return response.json(dict(ok=True, reply=reply))
+        result = dict(ok=True, reply=reply)
+        if generated_scenario:
+            result["analogy_scenario"] = generated_scenario
+        return response.json(result)
     except Exception as e:
         logger.exception("LLM reflection failed")
         return response.json(dict(ok=False, error=str(e)))
@@ -1207,6 +1240,67 @@ def _get_course_openai_key():
 
 
 # call the openai chat completion API using the course-wide token and return the model reply
+def _generate_analogy_scenario(question, code, choices, theme_label, selected, reflection=""):
+    """
+    One-shot LLM call to generate:
+    1. A concise scenario description (stored for subsequent turns)
+    2. The exact first message text to send to the student
+
+    Returns (scenario, first_message) or ("", "") on failure.
+    """
+    context_parts = []
+    if question:
+        context_parts.append(f"Question: {question}")
+    if code:
+        context_parts.append(f"Code:\n{code}")
+    if choices:
+        context_parts.append("Choices:\n" + "\n".join(choices))
+    if selected:
+        context_parts.append(f"Student answered: {selected}")
+    if reflection:
+        context_parts.append(f"Student's explanation: {reflection}")
+    context = "\n\n".join(context_parts)
+
+    prompt = (
+        f"A CS student just answered a peer instruction question and chose '{theme_label}' as their analogy theme.\n\n"
+        f"{context}\n\n"
+        f"Your job: write the FIRST MESSAGE a peer tutor would send to this student. The message must:\n"
+        f"1. Briefly introduce a real scenario from '{theme_label}' that structurally mirrors the core CS concept in this question (not variable renaming — a genuine parallel where the same kind of decision happens naturally)\n"
+        f"2. Frame a question that has the student apply their specific reasoning (what they said in their explanation) to that scenario — not just 'trace the values' generically\n\n"
+        f"Rules:\n"
+        f"- The student has seen nothing — you are introducing this scenario for the first time\n"
+        f"- Do NOT map variables (x, y, z) to theme items — find a parallel decision, not a renaming\n"
+        f"- Keep it casual, lowercase, no commas, short (3-5 sentences max)\n"
+        f"- Do NOT start with 'hey there' or any greeting or filler opener — just get into it\n"
+        f"- Do not say 'remember' or 'as we discussed' or 'in our scenario'\n"
+        f"- Do not give away or imply anything about whether the student's answer is right or wrong\n"
+        f"- End with a question that connects the student's specific reasoning to the scenario\n\n"
+        f"Output format — two sections separated by '---':\n"
+        f"SCENARIO: [1-2 sentence plain description of the analogy scenario for internal use]\n"
+        f"---\n"
+        f"MESSAGE: [the actual first message to send to the student]\n"
+    )
+
+    try:
+        raw = _call_openai([{"role": "user", "content": prompt}])
+        scenario = ""
+        first_message = ""
+        if "---" in raw:
+            parts = raw.split("---", 1)
+            scenario_part = parts[0].strip()
+            message_part = parts[1].strip()
+            if scenario_part.upper().startswith("SCENARIO:"):
+                scenario = scenario_part[len("SCENARIO:"):].strip()
+            if message_part.upper().startswith("MESSAGE:"):
+                first_message = message_part[len("MESSAGE:"):].strip()
+        if not scenario:
+            scenario = raw.strip()
+        return scenario, first_message
+    except Exception:
+        logger.exception("Failed to generate analogy scenario")
+        return "", ""
+
+
 def _call_openai(messages):
     """
     Minimal HTTP call using the instructor-provided course-wide OpenAI token.

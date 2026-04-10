@@ -77,9 +77,9 @@
     {{ pass }}
     {{ if all_done == "false": }}
     <div class="col-md-6" id="reflectionPanel" style="opacity:0.5; pointer-events:none;">
-      <div id="themePicker" style="display:none; margin-bottom:10px;">
-        <label for="themeSelect"><strong>Pick an analogy theme for your discussion:</strong></label>
-        <select id="themeSelect" class="form-control" style="margin-top:4px;">
+      <div id="themePicker" style="display:none; margin-bottom:14px; background:#f0f4ff; border:1px solid #c5d0e8; border-radius:6px; padding:10px 12px;">
+        <label for="themeSelect" style="margin-bottom:6px; display:block; font-size:0.9em; color:#444;">Choose an analogy theme for your discussion:</label>
+        <select id="themeSelect" class="form-control" style="font-size:0.9em;">
           <option value="">-- Select a theme --</option>
         </select>
       </div>
@@ -230,6 +230,9 @@
     if (enabled) {
       const notice = document.getElementById("vote1Notice");
       if (notice) notice.remove();
+      // reveal theme picker now that vote 1 is in
+      const picker = document.getElementById("themePicker");
+      if (picker && window.PI_ASYNC_MODE === "analogies") picker.style.display = "block";
     }
   }
 
@@ -362,8 +365,13 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
   const chat = document.getElementById("llmChat");
   const nextStep = document.getElementById("nextStep");
   lockVote1AndReflection();
-  const themeSelectEl = document.getElementById("themeSelect");
-  if (themeSelectEl) themeSelectEl.disabled = true;
+  const themePicker = document.getElementById("themePicker");
+  if (themePicker && window._selectedTheme) {
+    const selectedTheme = (window.PI_THEMES || []).find(t => t.id === window._selectedTheme);
+    if (selectedTheme) {
+      themePicker.innerHTML = '<div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; padding:8px 12px; font-size:0.9em; color:#2e7d32;"><strong>Theme:</strong> ' + selectedTheme.label + ' &nbsp;✓</div>';
+    }
+  }
 
   discussion.style.display = "block";
   if (window.PI_LLM_MODE === true) {
@@ -453,7 +461,8 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
           div_id: currentQuestion,
           selected_answer: selected,
           messages: window._llmMessages,
-          theme_id: window._selectedTheme || ""
+          theme_id: window._selectedTheme || "",
+          analogy_scenario: window._analogyScenario || ""
         })
       });
     } catch (e) {
@@ -470,6 +479,9 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
     }
 
     appendMsg("assistant", data.reply);
+    if (data.analogy_scenario) {
+      window._analogyScenario = data.analogy_scenario;
+    }
     if (typeof logPeerEvent === "function") {
       window._llmTurnIndex = (window._llmTurnIndex || 0) + 1;
       logPeerEvent({
@@ -489,7 +501,7 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
     window._llmMessages.push({
       role: "assistant",
       content: data.reply
-    });  
+    });
     nextStep.textContent =
       "Discuss this reasoning, then click 'Vote again' to vote again.";
 
@@ -572,7 +584,8 @@ function enableChat(reflection, selected) {
           div_id: currentQuestion,
           selected_answer: selected,
           messages: window._llmMessages,
-          theme_id: window._selectedTheme || ""
+          theme_id: window._selectedTheme || "",
+          analogy_scenario: window._analogyScenario || ""
         })
       });
     } catch (e) {
@@ -739,16 +752,15 @@ function enableChat(reflection, selected) {
               studentSubmittedVote2 = true;
               window._vote2Enabled = false;
               updateStepBanner(4);
-            }
-            if (studentSubmittedVote2) {
-              try {
+              setTimeout(function() {
                 const comp = window.componentMap[currentQuestion];
-                if (comp && typeof comp.showFeedback === "function") {
-                  comp.showFeedback();
+                if (comp && comp.feedbackDiv) {
+                  comp.feedbackDiv.style.display = "none";
                 }
-              } catch (e) {
-                console.warn("Could not show correctness feedback", e);
-              }
+                document.querySelectorAll('.alert-danger, .alert-success').forEach(function(el) {
+                  if (el.textContent.includes('undefined')) el.style.display = 'none';
+                });
+              }, 300);
             }
           });
         };
@@ -759,7 +771,6 @@ function enableChat(reflection, selected) {
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll('.pi-ask-btn').forEach(btn => btn.remove());
 
-    // Populate and show the theme picker only in analogies mode
     if (window.PI_ASYNC_MODE === "analogies" && Array.isArray(window.PI_THEMES)) {
       const picker = document.getElementById("themePicker");
       const sel = document.getElementById("themeSelect");
@@ -771,7 +782,6 @@ function enableChat(reflection, selected) {
           opt.textContent = t.label;
           sel.appendChild(opt);
         });
-        // Disable submit until a theme is chosen
         if (submitBtn) {
           submitBtn.disabled = true;
           submitBtn.title = "Select an analogy theme first";
@@ -783,7 +793,6 @@ function enableChat(reflection, selected) {
             submitBtn.title = window._selectedTheme ? "" : "Select an analogy theme first";
           }
         });
-        picker.style.display = "block";
       }
     }
   });
