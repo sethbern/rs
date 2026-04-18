@@ -8,6 +8,7 @@
   window.PI_ASYNC_MODE = "{{=async_mode}}";
   window.PI_THEMES = {{=XML(pi_themes_json)}};
   window._selectedTheme = null;
+  window._analogyMapping = "";
   window.DISABLE_LLMTEST = true;
 
   window.eBookConfig = window.eBookConfig || {};
@@ -441,7 +442,6 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
     return;
   } else {
     const mcq = document.querySelector('.mchoice');
-
     const questionText = mcq ? mcq.innerText : "";
 
     window._llmMessages = [
@@ -462,7 +462,8 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
           selected_answer: selected,
           messages: window._llmMessages,
           theme_id: window._selectedTheme || "",
-          analogy_scenario: window._analogyScenario || ""
+          analogy_mapping: window._analogyMapping || "",
+          question_text: questionText
         })
       });
     } catch (e) {
@@ -479,9 +480,11 @@ async function fetchWithRetry(url, options, retries = 1, delayMs = 400) {
     }
 
     appendMsg("assistant", data.reply);
-    if (data.analogy_scenario) {
-      window._analogyScenario = data.analogy_scenario;
+    if (data.analogy_mapping) {
+      window._analogyMapping = data.analogy_mapping;
+      console.log("[ANALOGY] mapping received:", data.analogy_mapping);
     }
+    console.log("[LLM] first reply:", data.reply);
     if (typeof logPeerEvent === "function") {
       window._llmTurnIndex = (window._llmTurnIndex || 0) + 1;
       logPeerEvent({
@@ -585,7 +588,7 @@ function enableChat(reflection, selected) {
           selected_answer: selected,
           messages: window._llmMessages,
           theme_id: window._selectedTheme || "",
-          analogy_scenario: window._analogyScenario || ""
+          analogy_mapping: window._analogyMapping || ""
         })
       });
     } catch (e) {
@@ -604,6 +607,7 @@ function enableChat(reflection, selected) {
     }
 
     appendMsg("assistant", data.reply);
+    console.log("[LLM] reply:", data.reply);
     btn.disabled = false;
     input.disabled = false;
     if (typeof logPeerEvent === "function") {
