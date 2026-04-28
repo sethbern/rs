@@ -72,17 +72,26 @@
                         Next Question
                     </button>
                     {{ else: }}
-                    <div id="asyncBtnArea" style="display:inline-block;">
-                        <button
-                            type="button"
-                            id="toggleAsyncBtn"
-                            class="btn btn-info"
-                            onclick="showAsyncConfirm()"
-                            style="margin-right: 4px;{{ if peer_async_visible: }} background-color:#a3d4ec; border-color:#a3d4ec; color:#fff;{{ pass }}"
-                        >
-                            {{ if peer_async_visible: }}Undo After-Class Release{{ else: }}Release After-Class PI{{ pass }}
-                        </button>
-                    </div>
+                    <button type="button" id="asyncToggle"
+                        onclick="handleAsyncToggle(this)"
+                        class="btn btn-sm"
+                        style="display:inline-flex; align-items:center; gap:6px;
+                               min-width:138px; flex-shrink:0;
+                               border-color:{{= '#2563eb' if peer_async_visible else '#ccc' }};
+                               background-color:{{= '#eff6ff' if peer_async_visible else '#fff' }};
+                               transition:all .18s;">
+                        <span style="display:flex; flex-direction:column; align-items:flex-start; line-height:1.2; flex:1; pointer-events:none;">
+                            <span style="font-size:10px; font-weight:600; color:#9ca3af; text-transform:uppercase; letter-spacing:.05em;">After-Class</span>
+                            <span id="asyncToggleStateLabel" style="font-size:12px; font-weight:600; color:{{= '#1d4ed8' if peer_async_visible else '#6b7280' }};">{{= 'Released ✓' if peer_async_visible else 'Not Released' }}</span>
+                        </span>
+                        <span style="position:relative; display:inline-block; width:28px; height:16px; flex-shrink:0; pointer-events:none;">
+                            <span id="asyncToggleTrack" style="position:absolute; top:0; left:0; right:0; bottom:0; border-radius:8px;
+                                background:{{= '#2563eb' if peer_async_visible else '#ccc' }}; transition:background .2s;"></span>
+                            <span id="asyncToggleThumb" style="position:absolute; top:2px; left:{{= '12px' if peer_async_visible else '2px' }};
+                                width:12px; height:12px; background:#fff; border-radius:50%;
+                                transition:left .18s; box-shadow:0 1px 2px rgba(0,0,0,.25);"></span>
+                        </span>
+                    </button>
                     {{ pass }}
                     <button
                         type="submit"
@@ -366,30 +375,32 @@
 
     var asyncReleased = {{=peer_async_visible}};
 
-    function showAsyncConfirm() {
-        var area = document.getElementById("asyncBtnArea");
-        var msg = asyncReleased
-            ? "Undo the after-class PI release?"
-            : "Release after-class PI questions to students?";
-        area.innerHTML = `
-            <span style="margin-right:6px; font-weight:bold;">${msg}</span>
-            <button type="button" class="btn btn-sm btn-default" onclick="confirmToggleAsync()" style="margin-right:4px;">Yes</button>
-            <button type="button" class="btn btn-sm btn-default" onclick="cancelAsyncConfirm()">Cancel</button>
-        `;
-    }
-
-    function cancelAsyncConfirm() {
-        var area = document.getElementById("asyncBtnArea");
-        var label = asyncReleased ? "Undo After-Class Release" : "Release After-Class PI";
-        var extraStyle = asyncReleased ? 'style="background-color:#a3d4ec; border-color:#a3d4ec; color:#fff; margin-right:4px;"' : 'style="margin-right:4px;"';
-        area.innerHTML = `<button type="button" id="toggleAsyncBtn" class="btn btn-info" onclick="showAsyncConfirm()" ${extraStyle}>${label}</button>`;
-    }
-
-    async function confirmToggleAsync() {
+    async function handleAsyncToggle(btn) {
+        btn.disabled = true;
         var resp = await fetch("/runestone/peer/toggle_async?assignment_id={{=assignment_id}}", { method: "POST" });
         var data = await resp.json();
         asyncReleased = data.peer_async_visible;
-        cancelAsyncConfirm();
+
+        var stateLabel = document.getElementById("asyncToggleStateLabel");
+        var track = document.getElementById("asyncToggleTrack");
+        var thumb = document.getElementById("asyncToggleThumb");
+
+        if (asyncReleased) {
+            btn.style.borderColor = "#2563eb";
+            btn.style.backgroundColor = "#eff6ff";
+            stateLabel.textContent = "Released ✓";
+            stateLabel.style.color = "#1d4ed8";
+            track.style.background = "#2563eb";
+            thumb.style.left = "12px";
+        } else {
+            btn.style.borderColor = "#ccc";
+            btn.style.backgroundColor = "#fff";
+            stateLabel.textContent = "Not Released";
+            stateLabel.style.color = "#6b7280";
+            track.style.background = "#ccc";
+            thumb.style.left = "2px";
+        }
+        btn.disabled = false;
     }
 </script>
 {{ end }}
