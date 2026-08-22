@@ -18,6 +18,7 @@ import {
 } from "@mantine/core";
 import classNames from "classnames";
 import { Control, Controller, UseFormSetValue } from "react-hook-form";
+import { useEffect, useState } from "react";
 
 import { useExercisesSelector } from "@/hooks/useExercisesSelector";
 import { Assignment, KindOfAssignment } from "@/types/assignment";
@@ -72,6 +73,51 @@ export const AssignmentEdit = ({
 }: AssignmentEditProps) => {
   const { isExercisesError, isExercisesLoading } = useExercisesSelector();
 
+  const kind = watch("kind") as KindOfAssignment | undefined;
+  const peerAsyncVisible = String(watch("peer_async_visible")) === "true";
+
+  const [customPromptsAllowed, setCustomPromptsAllowed] = useState(false);
+  const [useCustomPrompt, setUseCustomPrompt] = useState(false);
+  const [asyncLlmPrompt, setAsyncLlmPrompt] = useState("");
+  const [isPromptSaving, setIsPromptSaving] = useState(false);
+  const [promptMessage, setPromptMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (kind !== "Peer" || !selectedAssignment?.id) {
+      setCustomPromptsAllowed(false);
+      setUseCustomPrompt(false);
+      setAsyncLlmPrompt("");
+      setPromptMessage(null);
+      return;
+    }
+    let cancelled = false;
+
+    fetch(`/assignment/instructor/assignments/${selectedAssignment.id}/async_llm_prompt_settings`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (cancelled) return;
+
+        const detail = data?.detail ?? data;
+
+        const allowed = Boolean(detail?.custom_prompts_allowed);
+        const prompt = detail?.async_llm_prompt ?? "";
+
+        setCustomPromptsAllowed(allowed);
+        setAsyncLlmPrompt(prompt);
+        setUseCustomPrompt(Boolean(prompt));
+        setPromptMessage(null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPromptMessage("Could not load custom LLM prompt settings.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, selectedAssignment?.id]);
+
   if (isExercisesError) {
     return <ErrorState title="Couldn't load this assignment" message="Refresh the page." />;
   }
@@ -94,7 +140,7 @@ export const AssignmentEdit = ({
     { tab: "exercises", label: "Exercises", icon: "list" }
   ];
 
-  const kind = watch("kind") as KindOfAssignment | undefined;
+  // const kind = watch("kind") as KindOfAssignment | undefined;
 
   const renderDetailsSection = () => (
     <Paper className={styles.section}>
@@ -278,6 +324,46 @@ export const AssignmentEdit = ({
     </Paper>
   );
 
+ const saveAsyncLlmPrompt = async (promptToSave: string) => {
+  if (!selectedAssignment?.id) return;
+
+  const trimmedPrompt = promptToSave.trim();
+
+  setIsPromptSaving(true);
+  setPromptMessage(null);
+
+  try {
+    const response = await fetch(
+      `/assignment/instructor/assignments/${selectedAssignment.id}/async_llm_prompt_settings`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          enabled: Boolean(trimmedPrompt),
+          prompt: trimmedPrompt
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Save failed");
+    }
+
+    setUseCustomPrompt(Boolean(trimmedPrompt));
+    setAsyncLlmPrompt(trimmedPrompt);
+    setPromptMessage(
+      trimmedPrompt ? "Custom LLM prompt saved." : "Custom LLM prompt removed."
+    );
+  } catch {
+    setPromptMessage("Could not save custom LLM prompt.");
+  } finally {
+    setIsPromptSaving(false);
+  }
+};
+
+
   const renderPeerSection = () => (
     <Paper className={styles.section}>
       <h3 className={styles.sectionTitle}>Peer settings</h3>
@@ -298,6 +384,52 @@ export const AssignmentEdit = ({
             )}
           />
         </div>
+
+{customPromptsAllowed && peerAsyncVisible && (
+  <>
+    <div className={styles.settingRow}>
+      <label>Use custom LLM peer prompt</label>
+      <SegmentedControl
+        value={String(useCustomPrompt)}
+        onChange={(value) => {
+          const enabled = value === "true";
+          setUseCustomPrompt(enabled);
+
+          if (!enabled) {
+            setAsyncLlmPrompt("");
+            saveAsyncLlmPrompt("");
+          }
+        }}
+        data={YES_NO_OPTIONS}
+        size="sm"
+        aria-label="Use custom LLM peer prompt"
+      />
+    </div>
+
+    {useCustomPrompt && (
+      <div className={styles.field}>
+        <label htmlFor="edit-async-llm-prompt">Custom LLM peer prompt</label>
+        <Textarea
+          id="edit-async-llm-prompt"
+          value={asyncLlmPrompt}
+          onChange={(event) => setAsyncLlmPrompt(event.currentTarget.value)}
+          onBlur={() => saveAsyncLlmPrompt(asyncLlmPrompt)}
+          autosize
+          minRows={5}
+          placeholder="Optional: add assignment-specific instructions for the LLM peer."
+          disabled={isPromptSaving}
+        />
+
+        <p>
+          This prompt is added before the built-in safety rules. The LLM cannot
+          reveal the answer or confirm whether the student is right or wrong.
+        </p>
+
+        {promptMessage && <p>{promptMessage}</p>}
+      </div>
+    )}
+  </>
+)}
       </div>
     </Paper>
   );

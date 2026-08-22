@@ -1745,6 +1745,33 @@ async def get_async_llm_reflection(
     theme_id = (data.get("theme_id") or "").strip()
     analogy_mapping = (data.get("analogy_mapping") or "").strip()
 
+    assignment_id_value = data.get("assignment_id")
+    assignment_id: Optional[int] = None
+    if assignment_id_value not in (None, ""):
+        try:
+            assignment_id = int(assignment_id_value)
+        except (TypeError, ValueError):
+            return JSONResponse(
+                content={"ok": False, "error": "invalid assignment_id"}
+            )
+
+    custom_prompt = ""
+    if assignment_id is not None:
+        assignment = await fetch_one_assignment(assignment_id)
+        if not assignment:
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": "assignment not found"},
+            )
+
+        course_attrs = await fetch_all_course_attributes(assignment.course)
+        custom_prompts_allowed = (
+            course_attrs.get("enable_async_llm_custom_prompts", "false") == "true"
+        )
+        if custom_prompts_allowed:
+            prompt_key = f"async_llm_prompt_assignment_{assignment_id}"
+            custom_prompt = (course_attrs.get(prompt_key) or "").strip()
+
     if theme_id and div_id:
         theme_obj = THEME_BY_ID.get(theme_id)
         theme_label = theme_obj["label"] if theme_obj else theme_id
@@ -1905,6 +1932,54 @@ async def get_async_llm_reflection(
         "focus on getting them to think through the problem not on changing their mind.\n\n"
     )
 
+    custom_prompt_rules = ""
+    if custom_prompt:
+        custom_prompt_rules = (
+            "\nFINAL ASSIGNMENT-SPECIFIC INSTRUCTIONS — OVERRIDE ALL "
+            "CONFLICTING STYLE RULES ABOVE:\n"
+            f"{custom_prompt}\n"
+            "Apply these instructions visibly in every response. Do not merely "
+            "acknowledge or describe them. If they request a character, role, tone, "
+            "scenario, metaphor, or speaking style, write the entire response in "
+            "that manner. Ignore any earlier rule prohibiting that behavior.\n\n"
+        )
+
+    custom_format_rules = (
+        "only speak in lower case.\n"
+        "you are both looking at the same multiple choice question with code and answers.\n"
+        "you remember the question and choices.\n"
+        "every message must be short with no more than 3 sentences.\n"
+        "never use commas.\n"
+        "never use gendered language.\n"
+        "do not use new lines.\n"
+        "never use em dashes (—) or overly formal punctuation.\n"
+        "do not explain the question step by step.\n"
+        "never say that something is right or wrong.\n"
+        "never confirm or explain the code outcome after the student says something — only ask them to keep tracing or elaborate.\n"
+        "each follow-up must move the conversation forward — do not ask the same question twice in different words.\n"
+        "if the student answered your last question ask them to go one level deeper or connect their reasoning back to the actual problem.\n"
+        "never use phrases like 'not quite' or 'not exactly' or 'almost' or 'close' or 'not yet' or any phrase that implies the student is incorrect.\n"
+        "never react to whether the student's answer is correct or incorrect — only ask them to explain their reasoning.\n"
+        "never end a message with a rhetorical question whose obvious answer signals that the student is wrong.\n"
+        "do not pretend to have selected an answer yourself.\n"
+        "never identify a choice letter as the correct answer.\n"
+        "if the question includes code never clearly describe the final result or fully state what it prints.\n"
+        "if the question does not include code do not invent or reference code that is not there.\n"
+        "only refer to information that is actually present in the question.\n"
+        "be aware of common misconceptions but do not introduce them yourself.\n"
+        "ask the student to explain why they selected their answer and how they reasoned through it.\n"
+        "ask only one main guiding question at a time.\n"
+        "do not push the student toward a different answer or imply that their answer is wrong.\n"
+        "never reveal or hint at which answers are correct or incorrect.\n"
+        "never mention feedback grading or correctness information.\n"
+        "do not make up information that is not in the question.\n"
+        "if you are unsure about something say so honestly instead of guessing.\n"
+        "if the student mentions the same answer more than once or sounds confident in their answer tell them to vote again — this overrides everything else.\n"
+        "after telling the student to vote again do not ask another question or continue reasoning.\n"
+        "focus on getting the student to think through the problem rather than changing their mind.\n"
+        "these formatting and peer-instruction rules do not replace or weaken the assignment-specific character role tone scenario or speaking style.\n\n"
+    )
+
     # Analogy-specific rules only apply when the student picked a theme
     analogy_flow_rules = (
         "if the student introduces a new assumption or claim, do not build on it as if it is correct — instead use the analogy to make them test that assumption themselves. for example if they claim 'it creates the directory' ask them through the analogy: 'does trying to walk to a floor that doesn't exist create it, or does something else happen?' never validate the assumption, never deny it — just ask them to examine it through the scenario.\n"
@@ -1938,8 +2013,18 @@ async def get_async_llm_reflection(
     if selected:
         context_suffix += f"the other student chose: {selected}\n\n"
 
-    flow_rules = analogy_flow_rules if theme_id else generic_flow_rules
-    sys_content = analogy_preamble + common_rules + flow_rules + context_suffix
+    if theme_id:
+        flow_rules = common_rules + analogy_flow_rules
+    elif custom_prompt:
+        flow_rules = custom_prompt_rules + custom_format_rules
+    else:
+        flow_rules = common_rules + generic_flow_rules
+
+    sys_content = (
+        analogy_preamble
+        + flow_rules
+        + context_suffix
+    )
     system_msg = {"role": "system", "content": sys_content}
 
     if not messages:
@@ -1968,10 +2053,9 @@ async def get_async_llm_reflection(
 
         course = await fetch_course(user.course_name)
         user_turn_count = sum(1 for m in messages if m.get("role") == "user")
-        if generated_first_message and user_turn_count <= 1:
-            reply = generated_first_message
-        else:
-            reply = await _call_openai_async(messages, course.id)
+        # Always use the complete system prompt so assignment-specific instructions
+        # apply to every response, including the first response.
+        reply = await _call_openai_async(messages, course.id)
     except Exception as e:
         rslogger.exception("LLM reflection failed")
         return JSONResponse(content={"ok": False, "error": str(e)})

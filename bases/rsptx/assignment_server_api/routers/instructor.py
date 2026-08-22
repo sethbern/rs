@@ -25,6 +25,8 @@ from fastapi.responses import (
 from sqlalchemy import create_engine
 from pydantic import BaseModel
 from typing import List, Optional, Annotated
+from sqlalchemy import text
+from rsptx.db.async_session import async_session
 
 # Local application imports
 # -------------------------
@@ -749,6 +751,151 @@ async def do_update_assignment(
         )
     return make_json_response(status=status.HTTP_200_OK, detail={"status": "success"})
 
+CUSTOM_PROMPTS_ENABLED_ATTR = "enable_async_llm_custom_prompts"
+
+
+def assignment_async_llm_prompt_attr(assignment_id: int) -> str:
+    return f"async_llm_prompt_assignment_{assignment_id}"
+
+
+class AsyncLlmPromptSettingsIncoming(BaseModel):
+    enabled: bool = False
+    prompt: str = ""
+
+@router.get("/assignments/{assignment_id}/async_llm_prompt_settings")
+@instructor_role_required()
+@with_course()
+async def get_assignment_async_llm_prompt_settings(
+    request: Request,
+    assignment_id: int,
+    course=None,
+):
+    assignment = await fetch_one_assignment(assignment_id)
+
+    if not assignment or assignment.course != course.id:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Assignment not found"},
+        )
+
+    course_attrs = await fetch_all_course_attributes(course.id)
+    custom_prompts_allowed = (
+        course_attrs.get(CUSTOM_PROMPTS_ENABLED_ATTR, "false") == "true"
+    )
+
+    prompt_attr = assignment_async_llm_prompt_attr(assignment_id)
+    prompt = course_attrs.get(prompt_attr, "")
+
+    return JSONResponse(
+        content={
+            "custom_prompts_allowed": custom_prompts_allowed,
+            "async_llm_prompt": prompt,
+            "prompt_enabled": bool(prompt),
+        }
+    )
+
+
+@router.put("/assignments/{assignment_id}/async_llm_prompt_settings")
+@instructor_role_required()
+@with_course()
+async def save_assignment_async_llm_prompt_settings(
+    request: Request,
+    assignment_id: int,
+    request_data: AsyncLlmPromptSettingsIncoming,
+    course=None,
+):
+    assignment = await fetch_one_assignment(assignment_id)
+
+    if not assignment or assignment.course != course.id:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Assignment not found"},
+        )
+
+    course_attrs = await fetch_all_course_attributes(course.id)
+    custom_prompts_allowed = (
+        course_attrs.get(CUSTOM_PROMPTS_ENABLED_ATTR, "false") == "true"
+    )
+
+    if not custom_prompts_allowed:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Custom LLM prompts are not enabled for this course"},
+        )
+
+    prompt_attr = assignment_async_llm_prompt_attr(assignment_id)
+    prompt = (request_data.prompt or "").strip()
+
+    async with async_session() as session:
+        await session.execute(
+            text(
+                """
+                delete from course_attributes
+                where course_id = :course_id
+                  and attr = :attr
+                """
+            ),
+            {
+                "course_id": course.id,
+                "attr": prompt_attr,
+            },
+        )
+
+        if request_data.enabled and prompt:
+            await session.execute(
+                text(
+                    """
+                    insert into course_attributes (course_id, attr, value)
+                    values (:course_id, :attr, :value)
+                    """
+                ),
+                {
+                    "course_id": course.id,
+                    "attr": prompt_attr,
+                    "value": prompt,
+                },
+            )
+
+        await session.commit()
+
+    return JSONResponse(content={"status": "success"})
+
+
+@router.delete("/assignments/{assignment_id}/async_llm_prompt_settings")
+@instructor_role_required()
+@with_course()
+async def delete_assignment_async_llm_prompt_settings(
+    request: Request,
+    assignment_id: int,
+    course=None,
+):
+    assignment = await fetch_one_assignment(assignment_id)
+
+    if not assignment or assignment.course != course.id:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Assignment not found"},
+        )
+
+    prompt_attr = assignment_async_llm_prompt_attr(assignment_id)
+
+    async with async_session() as session:
+        await session.execute(
+            text(
+                """
+                delete from course_attributes
+                where course_id = :course_id
+                  and attr = :attr
+                """
+            ),
+            {
+                "course_id": course.id,
+                "attr": prompt_attr,
+            },
+        )
+        await session.commit()
+
+    return JSONResponse(content={"status": "success"})
 
 @router.get("/sections_for_chapter/{chapter}")
 @instructor_role_required()

@@ -858,7 +858,7 @@ function collapseJustification(text) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           div_id: currentQuestion,
-          course: eBookConfig.course
+          course: eBookConfig.cours
         })
       });
 
@@ -998,6 +998,7 @@ function collapseJustification(text) {
           body: JSON.stringify({
             div_id: currentQuestion,
             selected_answer: selected,
+            assignment_id: {{ assignment_id }},
             messages: window._llmMessages,
             reflection: reflection,
             theme_id: window._selectedTheme || "",
@@ -1089,6 +1090,7 @@ function enableChat(reflection, selected) {
         body: JSON.stringify({
           div_id: currentQuestion,
           selected_answer: selected,
+          assignment_id: {{ assignment_id }},
           messages: window._llmMessages,
           theme_id: window._selectedTheme || "",
           analogy_mapping: window._analogyMapping || ""
