@@ -66,10 +66,22 @@ Course Settings
             <div class="settingsbox">
                 <div class="checkbox-container">
                     <input type="checkbox" id="async_llm_modes" {% if enable_async_llm_modes=="true" %}checked{% endif %}
-                        onchange="updateCourse(this,'enable_async_llm_modes')">
+                        onchange="updateAsyncLlmModes(this)">
                     <label for="async_llm_modes">Enable Async LLM Modes for Peer Instruction</label>
                 </div>
                 <div class="setting-description">Allow per-question LLM chat mode selection in asynchronous peer instruction activities</div>
+            </div>
+            
+            <div class="settingsbox" id="async_llm_custom_prompt_setting">
+                <div class="checkbox-container">
+                    <input type="checkbox" id="async_llm_custom_prompts"
+                        {% if enable_async_llm_custom_prompts=="true" %}checked{% endif %}
+                        onchange="updateCourse(this,'enable_async_llm_custom_prompts')">
+                    <label for="async_llm_custom_prompts">Enable Custom LLM Prompts for Assignments</label>
+                </div>
+                <div class="setting-description">
+                    Allow instructors to add a custom LLM peer prompt from individual peer assignment settings.
+                </div>
             </div>
 
             <div class="settingsbox">
@@ -134,6 +146,140 @@ Course Settings
     window.COURSE_SETTINGS_DATA = {
         timezone: {{ course.timezone | default("", true) | tojson }}
     };
+
+    // Function to update course settings
+    async function updateCourse(element, setting) {
+        try {
+            let value;
+            if (element.type === 'checkbox') {
+                value = element.checked ? 'true' : 'false';
+            } else {
+                value = element.value;
+            }
+
+            const response = await fetch('/admin/instructor/update_course_setting', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    setting: setting,
+                    value: value
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert('Setting updated successfully!', 'success');
+            } else {
+                showAlert('Error updating setting: ' + result.message, 'error');
+            }
+        } catch (error) {
+            showAlert('Error updating setting: ' + error.message, 'error');
+        }
+    }
+
+    async function updateAsyncLlmModes(element) {
+        await updateCourse(element, 'enable_async_llm_modes');
+            toggleCustomPromptSetting();
+        }
+
+    function toggleCustomPromptSetting() {
+        const asyncLlmCheckbox = document.getElementById('async_llm_modes');
+        const customPromptSetting = document.getElementById('async_llm_custom_prompt_setting');
+
+        if (!asyncLlmCheckbox || !customPromptSetting) {
+            return;
+        }
+
+        customPromptSetting.style.display = asyncLlmCheckbox.checked ? 'flex' : 'none';
+    }
+
+    document.addEventListener('DOMContentLoaded', toggleCustomPromptSetting);
+
+    function showAlert(message, type) {
+        const alertContainer = document.getElementById('alert-container');
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${type}`;
+        alert.textContent = message;
+        alert.style.display = 'block';
+
+        alertContainer.innerHTML = '';
+        alertContainer.appendChild(alert);
+
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            alert.style.display = 'none';
+        }, 3000);
+    }
+
+    // Populate timezone selector and set a sensible default
+    (function initTimezoneSelector(){
+        const select = document.getElementById('timezone_select');
+        if (!select) return;
+
+        const courseTz = window.COURSE_SETTINGS_DATA?.timezone || '';
+        const browserTz = (Intl && Intl.DateTimeFormat && Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
+
+        // Build a list of time zones: try supportedValuesOf; fallback to a curated list
+        let tzList = [];
+        try {
+            if (Intl && typeof Intl.supportedValuesOf === 'function') {
+                tzList = Intl.supportedValuesOf('timeZone');
+            }
+        } catch (e) {
+            // ignore and fall back
+        }
+        if (!tzList || tzList.length === 0) {
+            tzList = [
+                'UTC',
+                'America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Phoenix',
+                'America/Anchorage','Pacific/Honolulu',
+                'Europe/London','Europe/Paris','Europe/Berlin','Europe/Madrid','Europe/Rome',
+                'Asia/Tokyo','Asia/Seoul','Asia/Shanghai','Asia/Kolkata','Asia/Singapore',
+                'Australia/Sydney','Australia/Melbourne','Pacific/Auckland'
+            ];
+        }
+
+        // Sort for nicer UX
+        tzList = Array.from(new Set(tzList)).sort((a,b)=>a.localeCompare(b));
+
+        // Populate options
+        tzList.forEach(tz => {
+            const opt = document.createElement('option');
+            opt.value = tz;
+            opt.textContent = tz;
+            select.appendChild(opt);
+        });
+
+        // Decide which to select: prefer non-empty course timezone; otherwise browser
+        const initialTz = courseTz && courseTz.trim() !== '' ? courseTz : browserTz;
+        if (![...select.options].some(o => o.value === initialTz)) {
+            // Ensure it's selectable if not in the list
+            const opt = document.createElement('option');
+            opt.value = initialTz;
+            opt.textContent = initialTz;
+            select.appendChild(opt);
+        }
+        select.value = initialTz;
+
+        // Show a hint with the detected browser tz and current course tz
+        const hint = document.getElementById('tz_browser_hint');
+        if (hint) {
+            let msg = `Detected browser time zone: ${browserTz}`;
+            if (courseTz && courseTz.trim() !== '') {
+                msg += ` · Current course time zone: ${courseTz}`;
+            }
+            hint.textContent = msg;
+        }
+
+        // If there is no courseTz, save browserTz automatically
+        if (!courseTz || courseTz.trim() === '') {
+            // Only save if not already set
+            updateCourse(select, 'timezone');
+        }
+    })();
 </script>
 <script src="/staticAssets/js/admin/course_settings.js"></script>
 {% endblock %}
